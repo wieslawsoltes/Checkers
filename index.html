@@ -68,6 +68,16 @@
       <option value="cpu">CPU vs CPU</option>
       <option value="human">Human vs CPU</option>
     </select>
+    &nbsp;&nbsp;
+    <label>Select CPU Algorithm: </label>
+    <select id="cpuAlgorithmSelect">
+      <option value="minimax" selected>Minimax with Alpha‑Beta</option>
+      <option value="negamax">Negamax with Alpha‑Beta</option>
+      <option value="mcts">Monte Carlo Tree Search</option>
+      <option value="iterative">Iterative Deepening</option>
+      <option value="random">Random Move</option>
+    </select>
+    <br><br>
     <button id="startGameBtn">Start New Game</button>
     <button id="resumeGameBtn" style="display:none;">Resume Saved Game</button>
     <!-- New History button in main view -->
@@ -121,7 +131,7 @@
     let squareSize = 60; // will be recalculated responsively
 
     let currentPlayer = 1;  // Player 1 (Human or CPU) is 1, CPU2 is -1.
-    const maxDepth = 4;   // Depth for minimax search
+    const maxDepth = 4;   // Depth for search algorithms
 
     // Counters for stagnant play.
     let moveCount = 0;
@@ -397,7 +407,8 @@
       return (moves.length === 0 || !hasPieces(b, player));
     }
     
-    // ------------- Minimax AI -------------
+    // ------------- CPU Search Algorithms -------------
+    // Original minimax (with alpha-beta)
     function minimax(b, depth, alpha, beta, player) {
       if (depth === 0 || gameOver(b, player)) {
         return { score: evaluateBoard(b), move: null };
@@ -434,6 +445,102 @@
         }
         return { score: minEval, move: bestMove };
       }
+    }
+    
+    // Negamax with alpha-beta
+    function negamaxSearch(b, depth, alpha, beta, player) {
+      if (depth === 0 || gameOver(b, player)) {
+        return { score: evaluateBoard(b) * player, move: null };
+      }
+      let bestScore = -Infinity;
+      let bestMove = null;
+      let moves = getAllValidMoves(b, player);
+      for (let move of moves) {
+        let newBoard = applyMove(b, move);
+        let result = negamaxSearch(newBoard, depth - 1, -beta, -alpha, -player);
+        let score = -result.score;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMove = move;
+        }
+        alpha = Math.max(alpha, score);
+        if (alpha >= beta) break;
+      }
+      return { score: bestScore, move: bestMove };
+    }
+    
+    // Simple Monte Carlo Tree Search (MCTS) approach.
+    function mcts(b, player) {
+      let moves = getAllValidMoves(b, player);
+      if (moves.length === 0) return null;
+      let simulations = 30;
+      let bestMove = null;
+      let bestWinRate = -Infinity;
+      for (let move of moves) {
+        let wins = 0;
+        for (let i = 0; i < simulations; i++) {
+          let result = simulateRandomPlayout(applyMove(b, move), -player);
+          if (result === 1) wins++;
+        }
+        let winRate = wins / simulations;
+        if (winRate > bestWinRate) {
+           bestWinRate = winRate;
+           bestMove = move;
+        }
+      }
+      return bestMove;
+    }
+    
+    // Helper function to simulate a random playout.
+    function simulateRandomPlayout(b, player) {
+      let boardSim = copyBoard(b);
+      let current = player;
+      let moves = 0;
+      while (!gameOver(boardSim, current) && moves < 20) {
+        let valid = getAllValidMoves(boardSim, current);
+        if (valid.length === 0) break;
+        let randomMove = valid[Math.floor(Math.random() * valid.length)];
+        boardSim = applyMove(boardSim, randomMove);
+        current = -current;
+        moves++;
+      }
+      let score = evaluateBoard(boardSim);
+      if (score * player > 0) return 1;
+      else if (score * player < 0) return -1;
+      return 0;
+    }
+    
+    // Iterative deepening minimax.
+    function iterativeDeepening(b, maxDepth, player) {
+      let bestMove = null;
+      for (let d = 1; d <= maxDepth; d++) {
+        let result = minimax(b, d, -Infinity, Infinity, player);
+        if (result.move) bestMove = result.move;
+      }
+      return bestMove;
+    }
+    
+    // Random move selection.
+    function randomMove(b, player) {
+      let moves = getAllValidMoves(b, player);
+      return moves[Math.floor(Math.random() * moves.length)];
+    }
+    
+    // Helper function to choose CPU move based on selected algorithm.
+    function getCPUMove(boardState, player) {
+      let algorithm = document.getElementById("cpuAlgorithmSelect").value;
+      if (algorithm === "minimax") {
+        return minimax(boardState, maxDepth, -Infinity, Infinity, player).move;
+      } else if (algorithm === "negamax") {
+        return negamaxSearch(boardState, maxDepth, -Infinity, Infinity, player).move;
+      } else if (algorithm === "mcts") {
+        return mcts(boardState, player);
+      } else if (algorithm === "iterative") {
+        return iterativeDeepening(boardState, maxDepth, player);
+      } else if (algorithm === "random") {
+        return randomMove(boardState, player);
+      }
+      return minimax(boardState, maxDepth, -Infinity, Infinity, player).move;
     }
     
     // ------------- Game Loop & End Game Handling -------------
@@ -496,8 +603,8 @@
         setTimeout(gameLoop, 100);
         return;
       }
-      // CPU turn.
-      let { move } = minimax(board, maxDepth, -Infinity, Infinity, currentPlayer);
+      // CPU turn: use the selected algorithm.
+      let move = getCPUMove(board, currentPlayer);
       if (move) {
         board = applyMove(board, move);
         moveCount++;
