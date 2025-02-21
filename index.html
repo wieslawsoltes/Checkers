@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <!-- Mobile viewport for proper scaling -->
+  <!-- Mobile viewport -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Checkers: CPU vs CPU / Human vs CPU</title>
   <style>
@@ -17,7 +17,7 @@
       justify-content: center;
       margin-top: 20px;
     }
-    /* Canvas now has a touch-action style to improve mobile interaction */
+    /* Responsive canvas with improved touch support */
     canvas { 
       border: 2px solid #000; 
       cursor: pointer; 
@@ -28,14 +28,32 @@
     }
     #controls { margin-top: 10px; }
     #controls button { margin: 0 5px; }
-    #gameHistory div { 
-      display: inline-block; 
-      margin: 5px; 
-      border: 1px solid #000; 
-      padding: 5px; 
+    #gameHistory, #historyListContainer, #replayContainer {
+      margin-top: 20px;
+    }
+    #gameHistory div, #historyListContainer li {
+      display: block;
+      margin: 5px;
+      border: 1px solid #000;
+      padding: 5px;
     }
     #gameHistory img { display: block; margin: 5px auto; }
     #modeSelection { margin-top: 20px; }
+    /* History list & replay container styling */
+    #historyListContainer, #replayContainer {
+      border: 2px solid #888;
+      padding: 10px;
+      max-width: 500px;
+      margin: 20px auto;
+      background: #f9f9f9;
+    }
+    #historyListContainer ul {
+      list-style: none;
+      padding: 0;
+    }
+    #historyListContainer li {
+      margin: 5px 0;
+    }
   </style>
 </head>
 <body>
@@ -46,7 +64,10 @@
       <option value="cpu">CPU vs CPU</option>
       <option value="human">Human vs CPU</option>
     </select>
-    <button id="startGameBtn">Start Game</button>
+    <button id="startGameBtn">Start New Game</button>
+    <button id="resumeGameBtn" style="display:none;">Resume Saved Game</button>
+    <!-- New History button in main view -->
+    <button id="mainHistoryBtn">Game History</button>
   </div>
   
   <div id="boardContainer">
@@ -56,24 +77,46 @@
   <div id="controls" style="display:none;">
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
-    <!-- Suggest Move button remains available -->
     <button id="suggestMoveBtn">Show Suggestion</button>
+    <button id="viewHistoryBtn">View History</button>
     <button id="backBtn">Back to Game Selection</button>
   </div>
   
-  <div id="winnerDisplay" style="margin-top:10px; font-size:18px; font-weight:bold;"></div>
-  <h2>Game History</h2>
+  <!-- Optional game history snapshots (older implementation) -->
+  <h2>Game History Snapshots</h2>
   <div id="gameHistory"></div>
-
+  
+  <!-- Container for listing saved games -->
+  <div id="historyListContainer" style="display:none;">
+    <h2>Saved Game History</h2>
+    <button id="clearHistoryBtn">Clear Game History</button>
+    <ul id="historyList"></ul>
+    <button id="closeHistoryListBtn">Close History</button>
+  </div>
+  
+  <!-- Replay container -->
+  <div id="replayContainer" style="display:none;">
+    <h2>Game Replay</h2>
+    <canvas id="replayCanvas" width="480" height="480"></canvas>
+    <div>
+      <button id="prevMoveBtn">Prev</button>
+      <input type="range" id="moveSlider" min="0" max="0" value="0" style="width:300px;">
+      <button id="nextMoveBtn">Next</button>
+    </div>
+    <button id="closeReplayBtn">Close Replay</button>
+  </div>
+  
+  <div id="winnerDisplay" style="margin-top:10px; font-size:18px; font-weight:bold;"></div>
+  
   <script>
     // Global Variables
     let board;
+    let moveHistory = [];  // Array to record board states for replay & saving current game
     const canvas = document.getElementById('checkers');
     const ctx = canvas.getContext('2d');
-    // Use let so we can adjust squareSize responsively.
-    let squareSize = 60; // default for 480px canvas
+    let squareSize = 60; // will be recalculated responsively
 
-    let currentPlayer = 1;  // Player 1: CPU1 (or Human) | Player -1: CPU2
+    let currentPlayer = 1;  // Player 1 (Human or CPU) is 1, CPU2 is -1.
     const maxDepth = 4;   // Depth for minimax search
 
     // Counters for stagnant play.
@@ -92,9 +135,35 @@
     let showSuggestion = false;
     let suggestedMove = null;
 
-    // ----------------- Mobile Responsive Canvas -----------------
+    // Variables for replay mode.
+    let replayHistory = [];
+    let replayIndex = 0;
+    const replayCanvas = document.getElementById("replayCanvas");
+    const replayCtx = replayCanvas.getContext("2d");
+
+    // ------------- Local Storage Helpers -------------
+    function saveCurrentGameState() {
+      let gameState = {
+        board: board,
+        currentPlayer: currentPlayer,
+        moveCount: moveCount,
+        noCaptureCount: noCaptureCount,
+        gameMode: gameMode,
+        moveHistory: moveHistory
+      };
+      localStorage.setItem("checkersCurrentGame", JSON.stringify(gameState));
+    }
+    
+    function loadCurrentGameState() {
+      let saved = localStorage.getItem("checkersCurrentGame");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      return null;
+    }
+    
+    // ------------- Responsive Canvas -------------
     function adjustCanvasSize() {
-      // Calculate new size based on 90% of viewport width, up to a max of 480.
       let newSize = Math.min(480, window.innerWidth * 0.9);
       canvas.width = newSize;
       canvas.height = newSize;
@@ -102,57 +171,56 @@
       drawBoard();
     }
     window.addEventListener("resize", adjustCanvasSize);
-
-    // ----------------- Board Setup & Rendering -----------------
+    
+    // ------------- Board Setup & Rendering -------------
     function initializeBoard() {
       let b = [];
-      for(let r = 0; r < 8; r++){
+      for (let r = 0; r < 8; r++) {
         b[r] = [];
-        for(let c = 0; c < 8; c++){
+        for (let c = 0; c < 8; c++) {
           b[r][c] = 0;
         }
       }
-      // CPU2 pieces on rows 0,1,2 (black pieces, represented as -1)
-      for(let r = 0; r < 3; r++){
-        for(let c = 0; c < 8; c++){
-          if((r + c) % 2 === 1) {
+      // CPU2 pieces on rows 0-2 (black pieces, represented as -1)
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 8; c++) {
+          if ((r + c) % 2 === 1) {
             b[r][c] = -1;
           }
         }
       }
-      // CPU1 pieces on rows 5,6,7 (red pieces, represented as 1)
-      for(let r = 5; r < 8; r++){
-        for(let c = 0; c < 8; c++){
-          if((r + c) % 2 === 1) {
+      // CPU1 pieces on rows 5-7 (red pieces, represented as 1)
+      for (let r = 5; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if ((r + c) % 2 === 1) {
             b[r][c] = 1;
           }
         }
       }
       return b;
     }
-
-    // Draw the board, pieces, and suggestion (if active).
+    
     function drawBoard() {
       // Draw squares.
-      for(let r = 0; r < 8; r++){
-        for(let c = 0; c < 8; c++){
-          ctx.fillStyle = ((r+c) % 2 === 0) ? '#EEE' : '#555';
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          ctx.fillStyle = ((r + c) % 2 === 0) ? '#EEE' : '#555';
           ctx.fillRect(c * squareSize, r * squareSize, squareSize, squareSize);
         }
       }
       // Draw pieces.
-      for(let r = 0; r < 8; r++){
-        for(let c = 0; c < 8; c++){
-          if(board[r][c] !== 0) {
-            if(Math.abs(board[r][c]) === 1) {
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (board[r][c] !== 0) {
+            if (Math.abs(board[r][c]) === 1) {
               ctx.fillStyle = (board[r][c] === 1) ? 'red' : 'black';
             } else {
               ctx.fillStyle = (board[r][c] === 2) ? 'pink' : 'gray';
             }
             ctx.beginPath();
-            ctx.arc(c * squareSize + squareSize/2, r * squareSize + squareSize/2, squareSize/2 - 5, 0, Math.PI * 2);
+            ctx.arc(c * squareSize + squareSize / 2, r * squareSize + squareSize / 2, squareSize / 2 - 5, 0, Math.PI * 2);
             ctx.fill();
-            if(Math.abs(board[r][c]) === 2) {
+            if (Math.abs(board[r][c]) === 2) {
               ctx.strokeStyle = 'gold';
               ctx.lineWidth = 3;
               ctx.stroke();
@@ -160,48 +228,80 @@
           }
         }
       }
-      // Highlight the selected piece in human mode.
-      if(selectedPiece) {
+      // Highlight selected piece (human mode)
+      if (selectedPiece) {
         ctx.strokeStyle = "yellow";
         ctx.lineWidth = 3;
         ctx.strokeRect(selectedPiece.c * squareSize, selectedPiece.r * squareSize, squareSize, squareSize);
       }
-      // Draw suggestion if toggled on and it's human's turn.
-      if(gameMode === "human" && currentPlayer === 1 && showSuggestion && suggestedMove) {
+      // Draw suggestion (if enabled and it's human turn)
+      if (gameMode === "human" && currentPlayer === 1 && showSuggestion && suggestedMove) {
         ctx.strokeStyle = "lime";
         ctx.lineWidth = 3;
         ctx.setLineDash([10, 5]);
         ctx.strokeRect(suggestedMove.from.c * squareSize, suggestedMove.from.r * squareSize, squareSize, squareSize);
         ctx.strokeRect(suggestedMove.to.c * squareSize, suggestedMove.to.r * squareSize, squareSize, squareSize);
         ctx.beginPath();
-        ctx.moveTo(suggestedMove.from.c * squareSize + squareSize/2, suggestedMove.from.r * squareSize + squareSize/2);
-        ctx.lineTo(suggestedMove.to.c * squareSize + squareSize/2, suggestedMove.to.r * squareSize + squareSize/2);
+        ctx.moveTo(suggestedMove.from.c * squareSize + squareSize / 2, suggestedMove.from.r * squareSize + squareSize / 2);
+        ctx.lineTo(suggestedMove.to.c * squareSize + squareSize / 2, suggestedMove.to.r * squareSize + squareSize / 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
     }
-
+    
+    // Draw replay board on replayCanvas using a given board state.
+    function drawReplayBoard(state) {
+      let replaySquareSize = replayCanvas.width / 8;
+      replayCtx.clearRect(0, 0, replayCanvas.width, replayCanvas.height);
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          replayCtx.fillStyle = ((r + c) % 2 === 0) ? '#EEE' : '#555';
+          replayCtx.fillRect(c * replaySquareSize, r * replaySquareSize, replaySquareSize, replaySquareSize);
+        }
+      }
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          let piece = state[r][c];
+          if (piece !== 0) {
+            if (Math.abs(piece) === 1) {
+              replayCtx.fillStyle = (piece === 1) ? 'red' : 'black';
+            } else {
+              replayCtx.fillStyle = (piece === 2) ? 'pink' : 'gray';
+            }
+            replayCtx.beginPath();
+            replayCtx.arc(c * replaySquareSize + replaySquareSize / 2, r * replaySquareSize + replaySquareSize / 2, replaySquareSize / 2 - 5, 0, Math.PI * 2);
+            replayCtx.fill();
+            if (Math.abs(piece) === 2) {
+              replayCtx.strokeStyle = 'gold';
+              replayCtx.lineWidth = 3;
+              replayCtx.stroke();
+            }
+          }
+        }
+      }
+    }
+    
     // Deep copy the board.
     function copyBoard(b) {
       return b.map(row => row.slice());
     }
-
-    // ----------------- Move Generation -----------------
+    
+    // ------------- Move Generation -------------
     function getDirections(piece) {
       if (piece === 1) return [[-1, -1], [-1, 1]];
       if (piece === -1) return [[1, -1], [1, 1]];
       return [[-1, -1], [-1, 1], [1, -1], [1, 1]];
     }
-
+    
     function getAllValidMoves(b, player) {
       let moves = [];
       let captureMoves = [];
-      for(let r = 0; r < 8; r++){
-        for(let c = 0; c < 8; c++){
-          if(b[r][c] * player > 0) {
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (b[r][c] * player > 0) {
             let pieceMoves = getValidMovesForPiece(b, r, c);
-            for(let m of pieceMoves) {
-              if(m.captures && m.captures.length > 0) {
+            for (let m of pieceMoves) {
+              if (m.captures && m.captures.length > 0) {
                 captureMoves.push(m);
               } else {
                 moves.push(m);
@@ -212,7 +312,7 @@
       }
       return (captureMoves.length > 0) ? captureMoves : moves;
     }
-
+    
     function getValidMovesForPiece(b, r, c) {
       let moves = [];
       let piece = b[r][c];
@@ -221,124 +321,126 @@
       function searchCaptures(boardState, row, col, captured, path) {
         let found = false;
         let directions = getDirections(boardState[row][col]);
-        for(let d of directions) {
+        for (let d of directions) {
           let midR = row + d[0], midC = col + d[1];
           let landingR = row + 2 * d[0], landingC = col + 2 * d[1];
-          if(landingR < 0 || landingR >= 8 || landingC < 0 || landingC >= 8) continue;
-          if(boardState[midR][midC] * piece < 0 && boardState[landingR][landingC] === 0) {
+          if (landingR < 0 || landingR >= 8 || landingC < 0 || landingC >= 8) continue;
+          if (boardState[midR][midC] * piece < 0 && boardState[landingR][landingC] === 0) {
             let newBoard = copyBoard(boardState);
             newBoard[row][col] = 0;
             newBoard[midR][midC] = 0;
             newBoard[landingR][landingC] = piece;
-            if(piece === 1 && landingR === 0) newBoard[landingR][landingC] = 2;
-            if(piece === -1 && landingR === 7) newBoard[landingR][landingC] = -2;
-            searchCaptures(newBoard, landingR, landingC, captured.concat([{r: midR, c: midC}]), path.concat([{r: landingR, c: landingC}]));
+            if (piece === 1 && landingR === 0) newBoard[landingR][landingC] = 2;
+            if (piece === -1 && landingR === 7) newBoard[landingR][landingC] = -2;
+            searchCaptures(newBoard, landingR, landingC, captured.concat([{ r: midR, c: midC }]), path.concat([{ r: landingR, c: landingC }]));
             found = true;
           }
         }
-        if(!found && captured.length > 0) {
-          captureSequences.push({ from: {r, c}, to: path[path.length - 1], captures: captured, sequence: path });
+        if (!found && captured.length > 0) {
+          captureSequences.push({ from: { r, c }, to: path[path.length - 1], captures: captured, sequence: path });
         }
       }
       searchCaptures(b, r, c, [], []);
-      if(captureSequences.length > 0) return captureSequences;
-      for(let d of dirs) {
+      if (captureSequences.length > 0) return captureSequences;
+      for (let d of dirs) {
         let newR = r + d[0], newC = c + d[1];
-        if(newR >= 0 && newR < 8 && newC >= 0 && newC < 8 && b[newR][newC] === 0) {
-          moves.push({ from: {r, c}, to: {r: newR, c: newC}, captures: [], sequence: [{r: newR, c: newC}] });
+        if (newR >= 0 && newR < 8 && newC >= 0 && newC < 8 && b[newR][newC] === 0) {
+          moves.push({ from: { r, c }, to: { r: newR, c: newC }, captures: [], sequence: [{ r: newR, c: newC }] });
         }
       }
       return moves;
     }
-
+    
     function applyMove(b, move) {
       let newBoard = copyBoard(b);
       let piece = newBoard[move.from.r][move.from.c];
       newBoard[move.from.r][move.from.c] = 0;
-      for(let cap of move.captures) {
+      for (let cap of move.captures) {
         newBoard[cap.r][cap.c] = 0;
       }
       newBoard[move.to.r][move.to.c] = piece;
-      if(piece === 1 && move.to.r === 0) newBoard[move.to.r][move.to.c] = 2;
-      if(piece === -1 && move.to.r === 7) newBoard[move.to.r][move.to.c] = -2;
+      if (piece === 1 && move.to.r === 0) newBoard[move.to.r][move.to.c] = 2;
+      if (piece === -1 && move.to.r === 7) newBoard[move.to.r][move.to.c] = -2;
       return newBoard;
     }
-
-    // ----------------- Evaluation & Game Over Checks -----------------
+    
+    // ------------- Evaluation & Game Over Checks -------------
     function evaluateBoard(b) {
       let score = 0;
-      for(let r = 0; r < 8; r++){
-        for(let c = 0; c < 8; c++){
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
           let piece = b[r][c];
-          if(piece === 1) score += 1;
-          else if(piece === 2) score += 1.5;
-          else if(piece === -1) score -= 1;
-          else if(piece === -2) score -= 1.5;
+          if (piece === 1) score += 1;
+          else if (piece === 2) score += 1.5;
+          else if (piece === -1) score -= 1;
+          else if (piece === -2) score -= 1.5;
         }
       }
       return score;
     }
-
+    
     function hasPieces(b, player) {
-      for(let r = 0; r < 8; r++){
-        for(let c = 0; c < 8; c++){
-          if(b[r][c] * player > 0) return true;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (b[r][c] * player > 0) return true;
         }
       }
       return false;
     }
-
+    
     function gameOver(b, player) {
       let moves = getAllValidMoves(b, player);
       return (moves.length === 0 || !hasPieces(b, player));
     }
-
-    // ----------------- Minimax AI -----------------
+    
+    // ------------- Minimax AI -------------
     function minimax(b, depth, alpha, beta, player) {
-      if(depth === 0 || gameOver(b, player)) {
+      if (depth === 0 || gameOver(b, player)) {
         return { score: evaluateBoard(b), move: null };
       }
       let moves = getAllValidMoves(b, player);
-      if(moves.length === 0) {
+      if (moves.length === 0) {
         return { score: evaluateBoard(b), move: null };
       }
       let bestMove = null;
-      if(player === 1) {  // Maximizer
+      if (player === 1) {
         let maxEval = -Infinity;
-        for(let move of moves) {
+        for (let move of moves) {
           let newBoard = applyMove(b, move);
           let result = minimax(newBoard, depth - 1, alpha, beta, -player);
-          if(result.score > maxEval) {
+          if (result.score > maxEval) {
             maxEval = result.score;
             bestMove = move;
           }
           alpha = Math.max(alpha, result.score);
-          if(beta <= alpha) break;
+          if (beta <= alpha) break;
         }
         return { score: maxEval, move: bestMove };
-      } else {  // Minimizer
+      } else {
         let minEval = Infinity;
-        for(let move of moves) {
+        for (let move of moves) {
           let newBoard = applyMove(b, move);
           let result = minimax(newBoard, depth - 1, alpha, beta, -player);
-          if(result.score < minEval) {
+          if (result.score < minEval) {
             minEval = result.score;
             bestMove = move;
           }
           beta = Math.min(beta, result.score);
-          if(beta <= alpha) break;
+          if (beta <= alpha) break;
         }
         return { score: minEval, move: bestMove };
       }
     }
-
-    // ----------------- Game Loop & End Game Handling -----------------
+    
+    // ------------- Game Loop & End Game Handling -------------
     function endGame(result) {
       gameActive = false;
       document.getElementById("winnerDisplay").textContent =
         "Game Over! " + (result === "Draw" ? "It's a draw." : "Winner: " + result);
+      
+      // Save snapshot to gameHistory div.
       let snapshotURL = canvas.toDataURL();
-      let gameHistory = document.getElementById("gameHistory");
+      let gameHistoryDiv = document.getElementById("gameHistory");
       let gameDiv = document.createElement("div");
       gameDiv.innerHTML = "<strong>" + (result === "Draw" ? "Draw" : "Winner: " + result) + "</strong><br>" +
                           "<strong>Total Moves:</strong> " + moveCount;
@@ -347,26 +449,41 @@
       img.width = 100;
       img.height = 100;
       gameDiv.appendChild(img);
-      gameHistory.appendChild(gameDiv);
+      gameHistoryDiv.appendChild(gameDiv);
+      
+      // Save complete game to local storage history.
+      let gameData = {
+        winner: result === "Draw" ? "Draw" : result,
+        moveCount: moveCount,
+        moveHistory: moveHistory,
+        timestamp: new Date().toISOString(),
+        gameMode: gameMode
+      };
+      let history = JSON.parse(localStorage.getItem("checkersGameHistory") || "[]");
+      history.push(gameData);
+      localStorage.setItem("checkersGameHistory", JSON.stringify(history));
+      
+      // Clear the current game state.
+      localStorage.removeItem("checkersCurrentGame");
       setTimeout(restartGame, 1500);
     }
-
+    
     function gameLoop() {
-      if(paused || !gameActive) return;
-      if(moveCount >= MAX_MOVES || noCaptureCount >= MAX_NO_CAPTURE_MOVES) {
+      if (paused || !gameActive) return;
+      if (moveCount >= MAX_MOVES || noCaptureCount >= MAX_NO_CAPTURE_MOVES) {
         endGame("Draw");
         return;
       }
-      if(gameOver(board, currentPlayer)) {
+      if (gameOver(board, currentPlayer)) {
         let winner = hasPieces(board, -currentPlayer) ? (currentPlayer === 1 ? "CPU2" : "CPU1") : "Draw";
         endGame(winner);
         return;
       }
-      // Human's turn.
-      if(gameMode === "human" && currentPlayer === 1) {
-        if(showSuggestion) {
+      // Human turn.
+      if (gameMode === "human" && currentPlayer === 1) {
+        if (showSuggestion) {
           let result = minimax(board, maxDepth, -Infinity, Infinity, 1);
-          if(result.move) {
+          if (result.move) {
             suggestedMove = result.move;
           }
         }
@@ -374,25 +491,28 @@
         setTimeout(gameLoop, 100);
         return;
       }
-      // CPU's turn.
+      // CPU turn.
       let { move } = minimax(board, maxDepth, -Infinity, Infinity, currentPlayer);
-      if(move) {
+      if (move) {
         board = applyMove(board, move);
         moveCount++;
-        if(move.captures.length === 0) {
+        if (move.captures.length === 0) {
           noCaptureCount++;
         } else {
           noCaptureCount = 0;
         }
+        // Record board state.
+        moveHistory.push(JSON.parse(JSON.stringify(board)));
+        saveCurrentGameState();
         drawBoard();
       }
       currentPlayer = -currentPlayer;
       setTimeout(gameLoop, 500);
     }
-
-    // ----------------- Human Input Handling -----------------
+    
+    // ------------- Human Input Handling -------------
     canvas.addEventListener("click", function(e) {
-      if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
+      if (gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -400,10 +520,9 @@
       const row = Math.floor(y / squareSize);
       handleSelection(row, col);
     });
-
-    // Use passive: false to allow preventDefault on touch events.
+    
     canvas.addEventListener("touchstart", function(e) {
-      if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
+      if (gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const touch = e.touches[0];
@@ -412,81 +531,106 @@
       const col = Math.floor(x / squareSize);
       const row = Math.floor(y / squareSize);
       handleSelection(row, col);
-    }, {passive: false});
-
+    }, { passive: false });
+    
     function handleSelection(row, col) {
-      if(selectedPiece === null) {
-        if(board[row][col] > 0) {
+      if (selectedPiece === null) {
+        if (board[row][col] > 0) {
           selectedPiece = { r: row, c: col };
           drawBoard();
         }
       } else {
-        if(selectedPiece.r === row && selectedPiece.c === col) {
+        if (selectedPiece.r === row && selectedPiece.c === col) {
           selectedPiece = null;
           drawBoard();
           return;
         }
         let validMoves = getValidMovesForPiece(board, selectedPiece.r, selectedPiece.c);
         let chosenMove = validMoves.find(m => m.to.r === row && m.to.c === col);
-        if(chosenMove) {
+        if (chosenMove) {
           board = applyMove(board, chosenMove);
           moveCount++;
-          if(chosenMove.captures.length === 0) {
+          if (chosenMove.captures.length === 0) {
             noCaptureCount++;
           } else {
             noCaptureCount = 0;
           }
-          // Do not clear suggestion—let it persist.
+          // Record board state.
+          moveHistory.push(JSON.parse(JSON.stringify(board)));
+          saveCurrentGameState();
           selectedPiece = null;
           drawBoard();
           currentPlayer = -currentPlayer;
           setTimeout(gameLoop, 500);
         } else {
-          if(board[row][col] > 0) {
+          if (board[row][col] > 0) {
             selectedPiece = { r: row, c: col };
             drawBoard();
           }
         }
       }
     }
-
-    // ----------------- Restart, Pause & Back Functions -----------------
+    
+    // ------------- Restart, Pause, Resume & Back Functions -------------
     function restartGame() {
+      // Start a new game (clearing any saved current game).
+      localStorage.removeItem("checkersCurrentGame");
       board = initializeBoard();
       currentPlayer = 1;
       moveCount = 0;
       noCaptureCount = 0;
+      moveHistory = [];
       gameActive = true;
       selectedPiece = null;
-      // Keep suggestion toggle state unchanged.
       suggestedMove = null;
       document.getElementById("suggestMoveBtn").textContent = showSuggestion ? "Hide Suggestion" : "Show Suggestion";
       document.getElementById("pauseBtn").textContent = "Pause";
       document.getElementById("winnerDisplay").textContent = "";
       adjustCanvasSize();
+      saveCurrentGameState();
       setTimeout(gameLoop, 500);
     }
-
+    
+    function resumeGame() {
+      let saved = loadCurrentGameState();
+      if (saved) {
+        board = saved.board;
+        currentPlayer = saved.currentPlayer;
+        moveCount = saved.moveCount;
+        noCaptureCount = saved.noCaptureCount;
+        gameMode = saved.gameMode;
+        moveHistory = saved.moveHistory;
+        gameActive = true;
+        selectedPiece = null;
+        suggestedMove = null;
+        document.getElementById("modeSelection").style.display = "none";
+        canvas.style.display = "block";
+        document.getElementById("controls").style.display = "block";
+        adjustCanvasSize();
+        setTimeout(gameLoop, 500);
+      }
+    }
+    
     document.getElementById("pauseBtn").addEventListener("click", () => {
       paused = !paused;
       document.getElementById("pauseBtn").textContent = paused ? "Resume" : "Pause";
-      if(!paused && gameActive) {
+      if (!paused && gameActive) {
         setTimeout(gameLoop, 500);
       }
     });
-
+    
     document.getElementById("restartBtn").addEventListener("click", () => {
       restartGame();
     });
-
+    
     // Toggle suggestion on/off.
     document.getElementById("suggestMoveBtn").addEventListener("click", () => {
-      if(gameMode !== "human") return;
+      if (gameMode !== "human") return;
       showSuggestion = !showSuggestion;
       document.getElementById("suggestMoveBtn").textContent = showSuggestion ? "Hide Suggestion" : "Show Suggestion";
-      if(showSuggestion) {
+      if (showSuggestion) {
         let result = minimax(board, maxDepth, -Infinity, Infinity, 1);
-        if(result.move) {
+        if (result.move) {
           suggestedMove = result.move;
         }
       } else {
@@ -494,7 +638,7 @@
       }
       drawBoard();
     });
-
+    
     document.getElementById("backBtn").addEventListener("click", () => {
       gameActive = false;
       canvas.style.display = "none";
@@ -502,16 +646,108 @@
       document.getElementById("modeSelection").style.display = "block";
       document.getElementById("winnerDisplay").textContent = "";
     });
-
+    
+    // Start New Game / Resume Game button events.
     document.getElementById("startGameBtn").addEventListener("click", () => {
+      localStorage.removeItem("checkersCurrentGame");
       gameMode = document.getElementById("gameModeSelect").value;
       document.getElementById("modeSelection").style.display = "none";
       canvas.style.display = "block";
       document.getElementById("controls").style.display = "block";
       restartGame();
     });
-
-    // Initial canvas size adjustment.
+    
+    document.getElementById("resumeGameBtn").addEventListener("click", () => {
+      resumeGame();
+    });
+    
+    // On page load, if there is a saved game, show the Resume button.
+    if (localStorage.getItem("checkersCurrentGame")) {
+      document.getElementById("resumeGameBtn").style.display = "inline-block";
+    }
+    
+    // ------------- Game History Replay -------------
+    // Open history list.
+    document.getElementById("viewHistoryBtn").addEventListener("click", () => {
+      loadHistoryList();
+      document.getElementById("historyListContainer").style.display = "block";
+    });
+    
+    // Also allow history access from main view.
+    document.getElementById("mainHistoryBtn").addEventListener("click", () => {
+      loadHistoryList();
+      document.getElementById("historyListContainer").style.display = "block";
+    });
+    
+    function loadHistoryList() {
+      let history = JSON.parse(localStorage.getItem("checkersGameHistory") || "[]");
+      let list = document.getElementById("historyList");
+      list.innerHTML = "";
+      history.forEach((game, index) => {
+        let li = document.createElement("li");
+        li.innerHTML = `Game ${index + 1} - ${game.timestamp} - Winner: ${game.winner} - Moves: ${game.moveCount} 
+                        <button class="replayBtn" data-index="${index}">Replay</button>`;
+        list.appendChild(li);
+      });
+    }
+    
+    document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+      localStorage.removeItem("checkersGameHistory");
+      loadHistoryList();
+    });
+    
+    document.getElementById("closeHistoryListBtn").addEventListener("click", () => {
+      document.getElementById("historyListContainer").style.display = "none";
+    });
+    
+    // Delegate click event for replay buttons.
+    document.getElementById("historyList").addEventListener("click", function(e) {
+      if (e.target && e.target.classList.contains("replayBtn")) {
+        let index = e.target.getAttribute("data-index");
+        startReplay(index);
+      }
+    });
+    
+    function startReplay(index) {
+      let history = JSON.parse(localStorage.getItem("checkersGameHistory") || "[]");
+      let game = history[index];
+      if (game && game.moveHistory && game.moveHistory.length > 0) {
+        replayHistory = game.moveHistory;
+        replayIndex = 0;
+        let slider = document.getElementById("moveSlider");
+        slider.max = replayHistory.length - 1;
+        slider.value = 0;
+        document.getElementById("replayContainer").style.display = "block";
+        drawReplayBoard(replayHistory[replayIndex]);
+      }
+    }
+    
+    document.getElementById("moveSlider").addEventListener("input", function(e) {
+      replayIndex = parseInt(e.target.value);
+      drawReplayBoard(replayHistory[replayIndex]);
+    });
+    
+    document.getElementById("prevMoveBtn").addEventListener("click", function() {
+      if (replayIndex > 0) {
+        replayIndex--;
+        document.getElementById("moveSlider").value = replayIndex;
+        drawReplayBoard(replayHistory[replayIndex]);
+      }
+    });
+    
+    document.getElementById("nextMoveBtn").addEventListener("click", function() {
+      if (replayIndex < replayHistory.length - 1) {
+        replayIndex++;
+        document.getElementById("moveSlider").value = replayIndex;
+        drawReplayBoard(replayHistory[replayIndex]);
+      }
+    });
+    
+    document.getElementById("closeReplayBtn").addEventListener("click", function() {
+      document.getElementById("replayContainer").style.display = "none";
+    });
+    
+    // ------------- Initial Setup -------------
     adjustCanvasSize();
   </script>
 </body>
