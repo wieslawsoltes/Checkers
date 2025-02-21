@@ -2,6 +2,8 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <!-- Mobile viewport for proper scaling -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Checkers: CPU vs CPU / Human vs CPU</title>
   <style>
     body { 
@@ -15,11 +17,14 @@
       justify-content: center;
       margin-top: 20px;
     }
+    /* Canvas now has a touch-action style to improve mobile interaction */
     canvas { 
       border: 2px solid #000; 
       cursor: pointer; 
       max-width: 90vw; 
       height: auto;
+      touch-action: none;
+      user-select: none;
     }
     #controls { margin-top: 10px; }
     #controls button { margin: 0 5px; }
@@ -51,7 +56,7 @@
   <div id="controls" style="display:none;">
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
-    <!-- Suggest Move button now toggles suggestion regardless of turn -->
+    <!-- Suggest Move button remains available -->
     <button id="suggestMoveBtn">Show Suggestion</button>
     <button id="backBtn">Back to Game Selection</button>
   </div>
@@ -65,7 +70,8 @@
     let board;
     const canvas = document.getElementById('checkers');
     const ctx = canvas.getContext('2d');
-    const squareSize = 60; // 8 squares => 480px canvas
+    // Use let so we can adjust squareSize responsively.
+    let squareSize = 60; // default for 480px canvas
 
     let currentPlayer = 1;  // Player 1: CPU1 (or Human) | Player -1: CPU2
     const maxDepth = 4;   // Depth for minimax search
@@ -85,6 +91,17 @@
     // Variables for suggested move (Human vs CPU)
     let showSuggestion = false;
     let suggestedMove = null;
+
+    // ----------------- Mobile Responsive Canvas -----------------
+    function adjustCanvasSize() {
+      // Calculate new size based on 90% of viewport width, up to a max of 480.
+      let newSize = Math.min(480, window.innerWidth * 0.9);
+      canvas.width = newSize;
+      canvas.height = newSize;
+      squareSize = newSize / 8;
+      drawBoard();
+    }
+    window.addEventListener("resize", adjustCanvasSize);
 
     // ----------------- Board Setup & Rendering -----------------
     function initializeBoard() {
@@ -154,16 +171,13 @@
         ctx.strokeStyle = "lime";
         ctx.lineWidth = 3;
         ctx.setLineDash([10, 5]);
-        // Highlight source square.
         ctx.strokeRect(suggestedMove.from.c * squareSize, suggestedMove.from.r * squareSize, squareSize, squareSize);
-        // Highlight destination square.
         ctx.strokeRect(suggestedMove.to.c * squareSize, suggestedMove.to.r * squareSize, squareSize, squareSize);
-        // Draw a line connecting the centers.
         ctx.beginPath();
         ctx.moveTo(suggestedMove.from.c * squareSize + squareSize/2, suggestedMove.from.r * squareSize + squareSize/2);
         ctx.lineTo(suggestedMove.to.c * squareSize + squareSize/2, suggestedMove.to.r * squareSize + squareSize/2);
         ctx.stroke();
-        ctx.setLineDash([]); // Reset dash pattern.
+        ctx.setLineDash([]);
       }
     }
 
@@ -199,7 +213,6 @@
       return (captureMoves.length > 0) ? captureMoves : moves;
     }
 
-    // Generate valid moves for a piece.
     function getValidMovesForPiece(b, r, c) {
       let moves = [];
       let piece = b[r][c];
@@ -238,7 +251,6 @@
       return moves;
     }
 
-    // Apply a move.
     function applyMove(b, move) {
       let newBoard = copyBoard(b);
       let piece = newBoard[move.from.r][move.from.c];
@@ -358,7 +370,7 @@
             suggestedMove = result.move;
           }
         }
-        drawBoard(); // Auto-update board with suggestion overlay.
+        drawBoard();
         setTimeout(gameLoop, 100);
         return;
       }
@@ -386,10 +398,10 @@
       const y = e.clientY - rect.top;
       const col = Math.floor(x / squareSize);
       const row = Math.floor(y / squareSize);
-      
       handleSelection(row, col);
     });
 
+    // Use passive: false to allow preventDefault on touch events.
     canvas.addEventListener("touchstart", function(e) {
       if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       e.preventDefault();
@@ -399,9 +411,8 @@
       const y = touch.clientY - rect.top;
       const col = Math.floor(x / squareSize);
       const row = Math.floor(y / squareSize);
-      
       handleSelection(row, col);
-    });
+    }, {passive: false});
 
     function handleSelection(row, col) {
       if(selectedPiece === null) {
@@ -425,7 +436,7 @@
           } else {
             noCaptureCount = 0;
           }
-          // Do not clear suggestion—the suggested move persists.
+          // Do not clear suggestion—let it persist.
           selectedPiece = null;
           drawBoard();
           currentPlayer = -currentPlayer;
@@ -452,7 +463,7 @@
       document.getElementById("suggestMoveBtn").textContent = showSuggestion ? "Hide Suggestion" : "Show Suggestion";
       document.getElementById("pauseBtn").textContent = "Pause";
       document.getElementById("winnerDisplay").textContent = "";
-      drawBoard();
+      adjustCanvasSize();
       setTimeout(gameLoop, 500);
     }
 
@@ -468,7 +479,7 @@
       restartGame();
     });
 
-    // Toggle suggestion on/off regardless of turn.
+    // Toggle suggestion on/off.
     document.getElementById("suggestMoveBtn").addEventListener("click", () => {
       if(gameMode !== "human") return;
       showSuggestion = !showSuggestion;
@@ -499,6 +510,9 @@
       document.getElementById("controls").style.display = "block";
       restartGame();
     });
+
+    // Initial canvas size adjustment.
+    adjustCanvasSize();
   </script>
 </body>
 </html>
