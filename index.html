@@ -31,13 +31,17 @@
     #gameHistory, #historyListContainer, #replayContainer {
       margin-top: 20px;
     }
+    /* Game History snapshot styling */
     #gameHistory div, #historyListContainer li {
       display: block;
       margin: 5px;
       border: 1px solid #000;
       padding: 5px;
     }
-    #gameHistory img { display: block; margin: 5px auto; }
+    #gameHistory img, #historyListContainer img { 
+      display: block; 
+      margin: 5px auto; 
+    }
     #modeSelection { margin-top: 20px; }
     /* History list & replay container styling */
     #historyListContainer, #replayContainer {
@@ -82,7 +86,7 @@
     <button id="backBtn">Back to Game Selection</button>
   </div>
   
-  <!-- Optional game history snapshots (older implementation) -->
+  <!-- Optional game history snapshots -->
   <h2>Game History Snapshots</h2>
   <div id="gameHistory"></div>
   
@@ -451,13 +455,14 @@
       gameDiv.appendChild(img);
       gameHistoryDiv.appendChild(gameDiv);
       
-      // Save complete game to local storage history.
+      // Save complete game to local storage history, including the snapshot.
       let gameData = {
         winner: result === "Draw" ? "Draw" : result,
         moveCount: moveCount,
         moveHistory: moveHistory,
         timestamp: new Date().toISOString(),
-        gameMode: gameMode
+        gameMode: gameMode,
+        snapshot: snapshotURL
       };
       let history = JSON.parse(localStorage.getItem("checkersGameHistory") || "[]");
       history.push(gameData);
@@ -685,8 +690,16 @@
       list.innerHTML = "";
       history.forEach((game, index) => {
         let li = document.createElement("li");
-        li.innerHTML = `Game ${index + 1} - ${game.timestamp} - Winner: ${game.winner} - Moves: ${game.moveCount} 
-                        <button class="replayBtn" data-index="${index}">Replay</button>`;
+        li.innerHTML = `Game ${index + 1} - ${game.timestamp} - Winner: ${game.winner} - Moves: ${game.moveCount}<br>`;
+        // Add the saved snapshot image.
+        if(game.snapshot){
+          let img = document.createElement("img");
+          img.src = game.snapshot;
+          img.width = 80;
+          img.height = 80;
+          li.appendChild(img);
+        }
+        li.innerHTML += ` <button class="replayBtn" data-index="${index}">Replay</button>`;
         list.appendChild(li);
       });
     }
