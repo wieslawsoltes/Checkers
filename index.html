@@ -51,6 +51,8 @@
   <div id="controls" style="display:none;">
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
+    <!-- New Suggest Move button for human mode -->
+    <button id="suggestMoveBtn">Show Suggestion</button>
     <button id="backBtn">Back to Game Selection</button>
   </div>
   
@@ -79,6 +81,10 @@
     let gameActive = false;  // True when a game is running.
     let gameMode = "cpu";    // "cpu" or "human"
     let selectedPiece = null; // For human move selection
+
+    // Variables for suggested move (Human vs CPU)
+    let showSuggestion = false;
+    let suggestedMove = null;
 
     // ----------------- Board Setup & Rendering -----------------
     // Create initial board state.
@@ -144,6 +150,22 @@
         ctx.strokeStyle = "yellow";
         ctx.lineWidth = 3;
         ctx.strokeRect(selectedPiece.c * squareSize, selectedPiece.r * squareSize, squareSize, squareSize);
+      }
+      // If suggestion is enabled and it's the human's turn, draw the suggestion.
+      if(gameMode === "human" && currentPlayer === 1 && showSuggestion && suggestedMove) {
+        ctx.strokeStyle = "lime";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        // Highlight source square.
+        ctx.strokeRect(suggestedMove.from.c * squareSize, suggestedMove.from.r * squareSize, squareSize, squareSize);
+        // Highlight destination square.
+        ctx.strokeRect(suggestedMove.to.c * squareSize, suggestedMove.to.r * squareSize, squareSize, squareSize);
+        // Draw a line connecting the centers.
+        ctx.beginPath();
+        ctx.moveTo(suggestedMove.from.c * squareSize + squareSize/2, suggestedMove.from.r * squareSize + squareSize/2);
+        ctx.lineTo(suggestedMove.to.c * squareSize + squareSize/2, suggestedMove.to.r * squareSize + squareSize/2);
+        ctx.stroke();
+        ctx.setLineDash([]); // reset dashes
       }
     }
 
@@ -411,14 +433,18 @@
         let chosenMove = validMoves.find(m => m.to.r === row && m.to.c === col);
         if(chosenMove) {
           board = applyMove(board, chosenMove);
-          drawBoard();
           moveCount++;
           if(chosenMove.captures.length === 0) {
             noCaptureCount++;
           } else {
             noCaptureCount = 0;
           }
+          // Clear selection and suggestion after the move.
           selectedPiece = null;
+          showSuggestion = false;
+          suggestedMove = null;
+          document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
+          drawBoard();
           currentPlayer = -currentPlayer;
           setTimeout(gameLoop, 500);
         } else {
@@ -439,6 +465,9 @@
       noCaptureCount = 0;
       gameActive = true;
       selectedPiece = null;
+      showSuggestion = false;
+      suggestedMove = null;
+      document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
       document.getElementById("pauseBtn").textContent = "Pause";
       document.getElementById("winnerDisplay").textContent = "";
       drawBoard();
@@ -455,6 +484,27 @@
 
     document.getElementById("restartBtn").addEventListener("click", () => {
       restartGame();
+    });
+
+    // Suggest Move button functionality.
+    document.getElementById("suggestMoveBtn").addEventListener("click", () => {
+      // Only allow suggestion if in human mode and it's the human's turn.
+      if(gameMode !== "human" || currentPlayer !== 1) return;
+      if(!showSuggestion) {
+        // Calculate suggestion using minimax.
+        let result = minimax(board, maxDepth, -Infinity, Infinity, 1);
+        if(result.move) {
+          suggestedMove = result.move;
+          showSuggestion = true;
+          document.getElementById("suggestMoveBtn").textContent = "Hide Suggestion";
+        }
+      } else {
+        // Toggle off suggestion.
+        showSuggestion = false;
+        suggestedMove = null;
+        document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
+      }
+      drawBoard();
     });
 
     // Back to game type selection button functionality.
