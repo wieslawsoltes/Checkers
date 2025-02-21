@@ -4,10 +4,31 @@
   <meta charset="UTF-8">
   <title>Checkers: CPU vs CPU / Human vs CPU</title>
   <style>
-    body { text-align: center; font-family: sans-serif; }
-    canvas { border: 2px solid #000; margin-top: 20px; cursor: pointer; }
+    body { 
+      text-align: center; 
+      font-family: sans-serif; 
+      margin: 0;
+      padding: 0;
+    }
+    #boardContainer {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    canvas { 
+      border: 2px solid #000; 
+      cursor: pointer; 
+      max-width: 90vw; 
+      height: auto;
+    }
     #controls { margin-top: 10px; }
-    #gameHistory div { display: inline-block; margin: 5px; border: 1px solid #000; padding: 5px; }
+    #controls button { margin: 0 5px; }
+    #gameHistory div { 
+      display: inline-block; 
+      margin: 5px; 
+      border: 1px solid #000; 
+      padding: 5px; 
+    }
     #gameHistory img { display: block; margin: 5px auto; }
     #modeSelection { margin-top: 20px; }
   </style>
@@ -22,11 +43,17 @@
     </select>
     <button id="startGameBtn">Start Game</button>
   </div>
-  <canvas id="checkers" width="400" height="400" style="display:none;"></canvas>
+  
+  <div id="boardContainer">
+    <canvas id="checkers" width="480" height="480" style="display:none;"></canvas>
+  </div>
+  
   <div id="controls" style="display:none;">
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
+    <button id="backBtn">Back to Game Selection</button>
   </div>
+  
   <div id="winnerDisplay" style="margin-top:10px; font-size:18px; font-weight:bold;"></div>
   <h2>Game History</h2>
   <div id="gameHistory"></div>
@@ -36,7 +63,7 @@
     let board;
     const canvas = document.getElementById('checkers');
     const ctx = canvas.getContext('2d');
-    const squareSize = 50; // 8 squares => 400px canvas
+    const squareSize = 60; // 8 squares => 480px canvas
 
     let currentPlayer = 1;  // Player 1: CPU1 (or Human) | Player -1: CPU2
     const maxDepth = 4;   // Depth for minimax search
@@ -316,7 +343,7 @@
         endGame(winner);
         return;
       }
-      // In Human vs CPU mode, if it's human's turn (player 1), wait for click.
+      // In Human vs CPU mode, if it's human's turn (player 1), wait for click/touch.
       if(gameMode === "human" && currentPlayer === 1) {
         setTimeout(gameLoop, 100);
         return;
@@ -338,6 +365,7 @@
     }
 
     // ----------------- Human Input Handling -----------------
+    // Handle mouse clicks.
     canvas.addEventListener("click", function(e) {
       if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       const rect = canvas.getBoundingClientRect();
@@ -346,6 +374,25 @@
       const col = Math.floor(x / squareSize);
       const row = Math.floor(y / squareSize);
       
+      handleSelection(row, col);
+    });
+
+    // Handle touch events for mobile devices.
+    canvas.addEventListener("touchstart", function(e) {
+      if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      const col = Math.floor(x / squareSize);
+      const row = Math.floor(y / squareSize);
+      
+      handleSelection(row, col);
+    });
+
+    // Common handler for piece selection.
+    function handleSelection(row, col) {
       // If no piece selected, try to select a human piece.
       if(selectedPiece === null) {
         if(board[row][col] > 0) {
@@ -353,7 +400,7 @@
           drawBoard();
         }
       } else {
-        // If clicking the same piece, deselect.
+        // If clicking/touching the same piece, deselect.
         if(selectedPiece.r === row && selectedPiece.c === col) {
           selectedPiece = null;
           drawBoard();
@@ -375,16 +422,16 @@
           currentPlayer = -currentPlayer;
           setTimeout(gameLoop, 500);
         } else {
-          // If the user clicks on another of their own pieces, update the selection.
+          // If the user touches another of their own pieces, update the selection.
           if(board[row][col] > 0) {
             selectedPiece = { r: row, c: col };
             drawBoard();
           }
         }
       }
-    });
+    }
 
-    // ----------------- Restart & Pause Functions -----------------
+    // ----------------- Restart, Pause & Back Functions -----------------
     function restartGame() {
       board = initializeBoard();
       currentPlayer = 1;
@@ -408,6 +455,18 @@
 
     document.getElementById("restartBtn").addEventListener("click", () => {
       restartGame();
+    });
+
+    // Back to game type selection button functionality.
+    document.getElementById("backBtn").addEventListener("click", () => {
+      gameActive = false;
+      // Hide game canvas and controls.
+      canvas.style.display = "none";
+      document.getElementById("controls").style.display = "none";
+      // Show mode selection.
+      document.getElementById("modeSelection").style.display = "block";
+      // Clear any winner message.
+      document.getElementById("winnerDisplay").textContent = "";
     });
 
     // ----------------- Mode Selection & Game Start -----------------
