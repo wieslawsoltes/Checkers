@@ -58,6 +58,16 @@
     #historyListContainer li {
       margin: 5px 0;
     }
+    /* Move history display styling */
+    #moveHistoryDisplay {
+      text-align: left;
+      max-width: 500px;
+      margin: 20px auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+      background: #f0f0f0;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -92,9 +102,13 @@
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
     <button id="suggestMoveBtn">Show Suggestion</button>
+    <button id="toggleMoveHistoryBtn">Show Move History</button>
     <button id="viewHistoryBtn">View History</button>
     <button id="backBtn">Back to Game Selection</button>
   </div>
+  
+  <!-- Move History Display Panel -->
+  <div id="moveHistoryDisplay"></div>
   
   <!-- Optional game history snapshots -->
   <h2>Game History Snapshots</h2>
@@ -126,6 +140,7 @@
     // Global Variables
     let board;
     let moveHistory = [];  // Array to record board states for replay & saving current game
+    let moveList = [];     // Array to record detailed move info for display during game
     const canvas = document.getElementById('checkers');
     const ctx = canvas.getContext('2d');
     let squareSize = 60; // will be recalculated responsively
@@ -163,7 +178,8 @@
         moveCount: moveCount,
         noCaptureCount: noCaptureCount,
         gameMode: gameMode,
-        moveHistory: moveHistory
+        moveHistory: moveHistory,
+        moveList: moveList
       };
       localStorage.setItem("checkersCurrentGame", JSON.stringify(gameState));
     }
@@ -543,6 +559,21 @@
       return minimax(boardState, maxDepth, -Infinity, Infinity, player).move;
     }
     
+    // ------------- Move History Display -------------
+    function updateMoveHistoryDisplay() {
+      let moveDisplay = document.getElementById("moveHistoryDisplay");
+      moveDisplay.innerHTML = "";
+      moveList.forEach((move, index) => {
+        let moveText = `Move ${index + 1}: from (${move.from.r}, ${move.from.c}) to (${move.to.r}, ${move.to.c})`;
+        if (move.captures && move.captures.length > 0) {
+          moveText += ` – Captures: ${move.captures.map(c => `(${c.r}, ${c.c})`).join(", ")}`;
+        }
+        let p = document.createElement("p");
+        p.textContent = moveText;
+        moveDisplay.appendChild(p);
+      });
+    }
+    
     // ------------- Game Loop & End Game Handling -------------
     function endGame(result) {
       gameActive = false;
@@ -562,14 +593,22 @@
       gameDiv.appendChild(img);
       gameHistoryDiv.appendChild(gameDiv);
       
+      // Determine game type based on gameMode.
+      let gameType = (gameMode === "cpu") ? "CPU1vsCPU2" : "CPUvsHUMAN";
+      // Get the selected CPU algorithm.
+      let algorithmUsed = document.getElementById("cpuAlgorithmSelect").value;
+      
       // Save complete game to local storage history, including the snapshot.
       let gameData = {
         winner: result === "Draw" ? "Draw" : result,
         moveCount: moveCount,
         moveHistory: moveHistory,
+        moveList: moveList,
         timestamp: new Date().toISOString(),
         gameMode: gameMode,
-        snapshot: snapshotURL
+        snapshot: snapshotURL,
+        gameType: gameType,
+        algorithmUsed: algorithmUsed
       };
       let history = JSON.parse(localStorage.getItem("checkersGameHistory") || "[]");
       history.push(gameData);
@@ -615,6 +654,9 @@
         }
         // Record board state.
         moveHistory.push(JSON.parse(JSON.stringify(board)));
+        // Record move details.
+        moveList.push(move);
+        updateMoveHistoryDisplay();
         saveCurrentGameState();
         drawBoard();
       }
@@ -669,6 +711,9 @@
           }
           // Record board state.
           moveHistory.push(JSON.parse(JSON.stringify(board)));
+          // Record move details.
+          moveList.push(chosenMove);
+          updateMoveHistoryDisplay();
           saveCurrentGameState();
           selectedPiece = null;
           drawBoard();
@@ -692,6 +737,8 @@
       moveCount = 0;
       noCaptureCount = 0;
       moveHistory = [];
+      moveList = [];
+      updateMoveHistoryDisplay();
       gameActive = true;
       selectedPiece = null;
       suggestedMove = null;
@@ -712,6 +759,8 @@
         noCaptureCount = saved.noCaptureCount;
         gameMode = saved.gameMode;
         moveHistory = saved.moveHistory;
+        moveList = saved.moveList || [];
+        updateMoveHistoryDisplay();
         gameActive = true;
         selectedPiece = null;
         suggestedMove = null;
@@ -749,6 +798,18 @@
         suggestedMove = null;
       }
       drawBoard();
+    });
+    
+    // Toggle move history display.
+    document.getElementById("toggleMoveHistoryBtn").addEventListener("click", () => {
+      let moveHistoryDiv = document.getElementById("moveHistoryDisplay");
+      if (moveHistoryDiv.style.display === "none") {
+        moveHistoryDiv.style.display = "block";
+        document.getElementById("toggleMoveHistoryBtn").textContent = "Hide Move History";
+      } else {
+        moveHistoryDiv.style.display = "none";
+        document.getElementById("toggleMoveHistoryBtn").textContent = "Show Move History";
+      }
     });
     
     document.getElementById("backBtn").addEventListener("click", () => {
@@ -797,7 +858,9 @@
       list.innerHTML = "";
       history.forEach((game, index) => {
         let li = document.createElement("li");
-        li.innerHTML = `Game ${index + 1} - ${game.timestamp} - Winner: ${game.winner} - Moves: ${game.moveCount}<br>`;
+        li.innerHTML = `Game ${index + 1} - ${game.timestamp} - Winner: ${game.winner} - Moves: ${game.moveCount}<br>
+                        <strong>Game Type:</strong> ${game.gameType} &nbsp;&nbsp;
+                        <strong>Algorithm:</strong> ${game.algorithmUsed}<br>`;
         // Add the saved snapshot image.
         if(game.snapshot){
           let img = document.createElement("img");
