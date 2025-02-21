@@ -51,7 +51,7 @@
   <div id="controls" style="display:none;">
     <button id="pauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
-    <!-- New Suggest Move button for human mode -->
+    <!-- Suggest Move button now toggles suggestion regardless of turn -->
     <button id="suggestMoveBtn">Show Suggestion</button>
     <button id="backBtn">Back to Game Selection</button>
   </div>
@@ -87,7 +87,6 @@
     let suggestedMove = null;
 
     // ----------------- Board Setup & Rendering -----------------
-    // Create initial board state.
     function initializeBoard() {
       let b = [];
       for(let r = 0; r < 8; r++){
@@ -115,7 +114,7 @@
       return b;
     }
 
-    // Draw the board and pieces.
+    // Draw the board, pieces, and suggestion (if active).
     function drawBoard() {
       // Draw squares.
       for(let r = 0; r < 8; r++){
@@ -131,7 +130,6 @@
             if(Math.abs(board[r][c]) === 1) {
               ctx.fillStyle = (board[r][c] === 1) ? 'red' : 'black';
             } else {
-              // Kings: use a different shade and add gold outline.
               ctx.fillStyle = (board[r][c] === 2) ? 'pink' : 'gray';
             }
             ctx.beginPath();
@@ -145,13 +143,13 @@
           }
         }
       }
-      // If a piece is selected (human mode), highlight it.
+      // Highlight the selected piece in human mode.
       if(selectedPiece) {
         ctx.strokeStyle = "yellow";
         ctx.lineWidth = 3;
         ctx.strokeRect(selectedPiece.c * squareSize, selectedPiece.r * squareSize, squareSize, squareSize);
       }
-      // If suggestion is enabled and it's the human's turn, draw the suggestion.
+      // Draw suggestion if toggled on and it's human's turn.
       if(gameMode === "human" && currentPlayer === 1 && showSuggestion && suggestedMove) {
         ctx.strokeStyle = "lime";
         ctx.lineWidth = 3;
@@ -165,7 +163,7 @@
         ctx.moveTo(suggestedMove.from.c * squareSize + squareSize/2, suggestedMove.from.r * squareSize + squareSize/2);
         ctx.lineTo(suggestedMove.to.c * squareSize + squareSize/2, suggestedMove.to.r * squareSize + squareSize/2);
         ctx.stroke();
-        ctx.setLineDash([]); // reset dashes
+        ctx.setLineDash([]); // Reset dash pattern.
       }
     }
 
@@ -175,14 +173,12 @@
     }
 
     // ----------------- Move Generation -----------------
-    // Return allowed directions based on piece type.
     function getDirections(piece) {
-      if (piece === 1) return [[-1, -1], [-1, 1]];  // CPU1 or Human piece: move upward
-      if (piece === -1) return [[1, -1], [1, 1]];    // CPU2 piece: move downward
-      return [[-1, -1], [-1, 1], [1, -1], [1, 1]];    // Kings move in all diagonals
+      if (piece === 1) return [[-1, -1], [-1, 1]];
+      if (piece === -1) return [[1, -1], [1, 1]];
+      return [[-1, -1], [-1, 1], [1, -1], [1, 1]];
     }
 
-    // Get all valid moves for a given player.
     function getAllValidMoves(b, player) {
       let moves = [];
       let captureMoves = [];
@@ -200,12 +196,10 @@
           }
         }
       }
-      // If captures are available, they must be taken.
       return (captureMoves.length > 0) ? captureMoves : moves;
     }
 
-    // Generate valid moves for a piece at (r, c).
-    // Each move is an object: { from: {r, c}, to: {r, c}, captures: [{r, c}, ...], sequence: [...] }
+    // Generate valid moves for a piece.
     function getValidMovesForPiece(b, r, c) {
       let moves = [];
       let piece = b[r][c];
@@ -235,7 +229,6 @@
       }
       searchCaptures(b, r, c, [], []);
       if(captureSequences.length > 0) return captureSequences;
-      // If no captures, look for simple moves.
       for(let d of dirs) {
         let newR = r + d[0], newC = c + d[1];
         if(newR >= 0 && newR < 8 && newC >= 0 && newC < 8 && b[newR][newC] === 0) {
@@ -245,7 +238,7 @@
       return moves;
     }
 
-    // Apply a move to the board.
+    // Apply a move.
     function applyMove(b, move) {
       let newBoard = copyBoard(b);
       let piece = newBoard[move.from.r][move.from.c];
@@ -260,7 +253,6 @@
     }
 
     // ----------------- Evaluation & Game Over Checks -----------------
-    // Simple evaluation: weighted count of pieces.
     function evaluateBoard(b) {
       let score = 0;
       for(let r = 0; r < 8; r++){
@@ -275,7 +267,6 @@
       return score;
     }
 
-    // Check if a player has any pieces.
     function hasPieces(b, player) {
       for(let r = 0; r < 8; r++){
         for(let c = 0; c < 8; c++){
@@ -285,14 +276,12 @@
       return false;
     }
 
-    // Determine if the game is over.
     function gameOver(b, player) {
       let moves = getAllValidMoves(b, player);
       return (moves.length === 0 || !hasPieces(b, player));
     }
 
     // ----------------- Minimax AI -----------------
-    // Minimax with alpha–beta pruning.
     function minimax(b, depth, alpha, beta, player) {
       if(depth === 0 || gameOver(b, player)) {
         return { score: evaluateBoard(b), move: null };
@@ -302,7 +291,7 @@
         return { score: evaluateBoard(b), move: null };
       }
       let bestMove = null;
-      if(player === 1) {  // CPU1 (or Human) is maximizer.
+      if(player === 1) {  // Maximizer
         let maxEval = -Infinity;
         for(let move of moves) {
           let newBoard = applyMove(b, move);
@@ -315,7 +304,7 @@
           if(beta <= alpha) break;
         }
         return { score: maxEval, move: bestMove };
-      } else {  // CPU2 is minimizer.
+      } else {  // Minimizer
         let minEval = Infinity;
         for(let move of moves) {
           let newBoard = applyMove(b, move);
@@ -332,7 +321,6 @@
     }
 
     // ----------------- Game Loop & End Game Handling -----------------
-    // End the game, display result and add a snapshot to history.
     function endGame(result) {
       gameActive = false;
       document.getElementById("winnerDisplay").textContent =
@@ -348,11 +336,9 @@
       img.height = 100;
       gameDiv.appendChild(img);
       gameHistory.appendChild(gameDiv);
-      // After a short delay, auto-restart the game.
       setTimeout(restartGame, 1500);
     }
 
-    // Main game loop. In Human vs CPU mode, if it's the human’s turn, wait for input.
     function gameLoop() {
       if(paused || !gameActive) return;
       if(moveCount >= MAX_MOVES || noCaptureCount >= MAX_NO_CAPTURE_MOVES) {
@@ -360,34 +346,39 @@
         return;
       }
       if(gameOver(board, currentPlayer)) {
-        // If current player cannot move, the opponent wins (if they have pieces).
         let winner = hasPieces(board, -currentPlayer) ? (currentPlayer === 1 ? "CPU2" : "CPU1") : "Draw";
         endGame(winner);
         return;
       }
-      // In Human vs CPU mode, if it's human's turn (player 1), wait for click/touch.
+      // Human's turn.
       if(gameMode === "human" && currentPlayer === 1) {
+        if(showSuggestion) {
+          let result = minimax(board, maxDepth, -Infinity, Infinity, 1);
+          if(result.move) {
+            suggestedMove = result.move;
+          }
+        }
+        drawBoard(); // Auto-update board with suggestion overlay.
         setTimeout(gameLoop, 100);
         return;
       }
-      // Otherwise, CPU makes a move.
+      // CPU's turn.
       let { move } = minimax(board, maxDepth, -Infinity, Infinity, currentPlayer);
       if(move) {
         board = applyMove(board, move);
-        drawBoard();
         moveCount++;
         if(move.captures.length === 0) {
           noCaptureCount++;
         } else {
           noCaptureCount = 0;
         }
+        drawBoard();
       }
       currentPlayer = -currentPlayer;
       setTimeout(gameLoop, 500);
     }
 
     // ----------------- Human Input Handling -----------------
-    // Handle mouse clicks.
     canvas.addEventListener("click", function(e) {
       if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       const rect = canvas.getBoundingClientRect();
@@ -399,7 +390,6 @@
       handleSelection(row, col);
     });
 
-    // Handle touch events for mobile devices.
     canvas.addEventListener("touchstart", function(e) {
       if(gameMode !== "human" || !gameActive || currentPlayer !== 1) return;
       e.preventDefault();
@@ -413,22 +403,18 @@
       handleSelection(row, col);
     });
 
-    // Common handler for piece selection.
     function handleSelection(row, col) {
-      // If no piece selected, try to select a human piece.
       if(selectedPiece === null) {
         if(board[row][col] > 0) {
           selectedPiece = { r: row, c: col };
           drawBoard();
         }
       } else {
-        // If clicking/touching the same piece, deselect.
         if(selectedPiece.r === row && selectedPiece.c === col) {
           selectedPiece = null;
           drawBoard();
           return;
         }
-        // Check if a valid move exists for the selected piece.
         let validMoves = getValidMovesForPiece(board, selectedPiece.r, selectedPiece.c);
         let chosenMove = validMoves.find(m => m.to.r === row && m.to.c === col);
         if(chosenMove) {
@@ -439,16 +425,12 @@
           } else {
             noCaptureCount = 0;
           }
-          // Clear selection and suggestion after the move.
+          // Do not clear suggestion—the suggested move persists.
           selectedPiece = null;
-          showSuggestion = false;
-          suggestedMove = null;
-          document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
           drawBoard();
           currentPlayer = -currentPlayer;
           setTimeout(gameLoop, 500);
         } else {
-          // If the user touches another of their own pieces, update the selection.
           if(board[row][col] > 0) {
             selectedPiece = { r: row, c: col };
             drawBoard();
@@ -465,9 +447,9 @@
       noCaptureCount = 0;
       gameActive = true;
       selectedPiece = null;
-      showSuggestion = false;
+      // Keep suggestion toggle state unchanged.
       suggestedMove = null;
-      document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
+      document.getElementById("suggestMoveBtn").textContent = showSuggestion ? "Hide Suggestion" : "Show Suggestion";
       document.getElementById("pauseBtn").textContent = "Pause";
       document.getElementById("winnerDisplay").textContent = "";
       drawBoard();
@@ -486,43 +468,32 @@
       restartGame();
     });
 
-    // Suggest Move button functionality.
+    // Toggle suggestion on/off regardless of turn.
     document.getElementById("suggestMoveBtn").addEventListener("click", () => {
-      // Only allow suggestion if in human mode and it's the human's turn.
-      if(gameMode !== "human" || currentPlayer !== 1) return;
-      if(!showSuggestion) {
-        // Calculate suggestion using minimax.
+      if(gameMode !== "human") return;
+      showSuggestion = !showSuggestion;
+      document.getElementById("suggestMoveBtn").textContent = showSuggestion ? "Hide Suggestion" : "Show Suggestion";
+      if(showSuggestion) {
         let result = minimax(board, maxDepth, -Infinity, Infinity, 1);
         if(result.move) {
           suggestedMove = result.move;
-          showSuggestion = true;
-          document.getElementById("suggestMoveBtn").textContent = "Hide Suggestion";
         }
       } else {
-        // Toggle off suggestion.
-        showSuggestion = false;
         suggestedMove = null;
-        document.getElementById("suggestMoveBtn").textContent = "Show Suggestion";
       }
       drawBoard();
     });
 
-    // Back to game type selection button functionality.
     document.getElementById("backBtn").addEventListener("click", () => {
       gameActive = false;
-      // Hide game canvas and controls.
       canvas.style.display = "none";
       document.getElementById("controls").style.display = "none";
-      // Show mode selection.
       document.getElementById("modeSelection").style.display = "block";
-      // Clear any winner message.
       document.getElementById("winnerDisplay").textContent = "";
     });
 
-    // ----------------- Mode Selection & Game Start -----------------
     document.getElementById("startGameBtn").addEventListener("click", () => {
       gameMode = document.getElementById("gameModeSelect").value;
-      // Hide mode selection controls and show game canvas and buttons.
       document.getElementById("modeSelection").style.display = "none";
       canvas.style.display = "block";
       document.getElementById("controls").style.display = "block";
